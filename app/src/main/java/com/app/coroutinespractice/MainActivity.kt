@@ -5,18 +5,27 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.*
-import kotlinx.coroutines.NonCancellable.invokeOnCompletion
+import kotlinx.coroutines.flow.cancellable
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
 
 class MainActivity : AppCompatActivity(), View.OnClickListener {
 
     lateinit var tv: TextView
-    var isRunning = false
-    var currentSecond = 0
+    var stopwatchJob: Job? = null
 
-    val scope = CoroutineScope(Dispatchers.IO)
-    var timerJob: Job? = null
+    val stopwatchFlow = flow<Int> {
+        var currentSecond = 0
+        while (true) {
+            emit(currentSecond)
+            delay(1000)
+            currentSecond++
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,29 +39,19 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
     override fun onClick(view: View?) {
         when (view?.id) {
             R.id.start -> {
-                if (timerJob?.isActive == true) return
-                isRunning = true
-                timerJob = scope.launch {
-                    while (true) {
-                        if (isRunning) {
-                            delay(1000)
-                            currentSecond++
-                            withContext(Dispatchers.Main) {
-                                tv.text = currentSecond.toString()
-                            }
-                        }
-                    }
-                }.also {
-                    it.invokeOnCompletion {
-                        scope.launch(Dispatchers.Main) {
-                            currentSecond = 0
-                            tv.text = currentSecond.toString()
+                if (stopwatchJob?.isActive == true) return
+                stopwatchJob = lifecycleScope.launchWhenStarted {
+                    repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        stopwatchFlow
+                            .cancellable()
+                            .collect {
+                            tv.text = it.toString()
                         }
                     }
                 }
             }
             R.id.stop -> {
-                timerJob?.cancel()
+                stopwatchJob?.cancel()
             }
         }
     }
